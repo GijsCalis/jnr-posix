@@ -1,17 +1,22 @@
 package jnr.posix.windows;
 
 import java.io.File;
+import java.io.FileDescriptor;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.file.Files;
-import java.text.NumberFormat;
+import java.nio.file.Path;
 import jnr.posix.DummyPOSIXHandler;
 import jnr.posix.FileStat;
 import jnr.posix.POSIX;
 import jnr.posix.POSIXFactory;
 import jnr.posix.WindowsPOSIX;
+import org.junit.Before;
 import org.junit.BeforeClass;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -21,9 +26,19 @@ import static org.junit.Assert.assertTrue;
 public class WindowsFileTest {
     private static POSIX posix;
 
+    @Rule
+    public TemporaryFolder tempFolder = new TemporaryFolder();
+
+    private File tempDir;
+
     @BeforeClass
     public static void setUpClass() throws Exception {
         posix = POSIXFactory.getPOSIX(new DummyPOSIXHandler(), true);
+    }
+
+    @Before
+    public void setup() {
+        tempDir = tempFolder.getRoot();
     }
 
     private class Pair {
@@ -74,13 +89,26 @@ public class WindowsFileTest {
     }
 
     @Test
-    public void testFakeUIDGUID() throws Throwable {
+    public void testFakeUID() throws Throwable {
         File f = File.createTempFile("stat", null);
 
         try {
             FileStat st = posix.stat(f.getAbsolutePath());
-            assertTrue(st.uid() == 0);
-            assertTrue(st.gid() == 0);
+            // Check for default value defined in AbstractJavaFileStat#uid() and .
+            assertEquals(-1, st.uid());
+        } finally {
+            f.delete();
+        }
+    }
+
+    @Test(expected = UnsupportedOperationException.class)
+    public void testGidUnsupported() throws IOException {
+        File f = File.createTempFile("stat", null);
+
+        try {
+            FileStat st = posix.stat(f.getAbsolutePath());
+            // Check for default value defined in AbstractJavaFileStat#uid() and .
+            st.gid();
         } finally {
             f.delete();
         }
@@ -116,11 +144,63 @@ public class WindowsFileTest {
 
         try {
             FileStat st = posix.stat(f.getAbsolutePath());
-            assertTrue(st.blocks() == -1);
-            assertTrue(st.blockSize() == -1);
+            // defined in jnr.posix.AbstractJavaFileStat#blockSize()
+            assertEquals(4096, st.blockSize());
         } finally {
             f.delete();
         }
+    }
+
+    @Test
+    public void testHardlinkNoLinks() throws IOException {
+        Path tempPath = tempFolder.getRoot().toPath();
+
+        Path nolinks = tempPath.resolve("nolinks");
+        Files.createFile(nolinks);
+
+        FileStat stNolinks = posix.stat(nolinks.toString());
+        assertEquals(1, stNolinks.nlink());
+    }
+
+    @Test
+    public void testHardlinksInSameDir() throws IOException {
+        Path tempPath = tempFolder.getRoot().toPath();
+
+        Path linkSource = tempPath.resolve("linkSource");
+        Files.createFile(linkSource);
+        Path linkDest = tempPath.resolve("linkDest");
+
+        Files.createLink(linkDest, linkSource);
+
+        FileDescriptor fdLink1Source = new FileInputStream(linkSource.toString()).getFD();
+        FileDescriptor fdLink1Dest = new FileInputStream(linkDest.toString()).getFD();
+        FileStat stLink1Source = posix.fstat(fdLink1Source);
+        FileStat stLink1Dest = posix.fstat(fdLink1Dest);
+
+        assertEquals(2, stLink1Source.nlink());
+        assertEquals(2, stLink1Dest.nlink());
+        assertEquals(stLink1Source.ino(), stLink1Dest.ino());
+    }
+
+    @Test
+    public void testHardlinkInSubdir() throws IOException {
+        Path tempPath = tempFolder.getRoot().toPath();
+
+        Path linkSource = tempPath.resolve("linkSource");
+        Files.createFile(linkSource);
+        Path subDir = tempPath.resolve("sub");
+        Files.createDirectory(subDir);
+        Path linkDest = subDir.resolve("linkDest");
+        Files.createLink(linkDest, linkSource);
+
+        FileDescriptor fdLink2Source = new FileInputStream(linkSource.toString()).getFD();
+        FileDescriptor fdLink2Dest = new FileInputStream(linkDest.toString()).getFD();
+        FileStat stLink2Source = posix.fstat(fdLink2Source);
+        FileStat stLink2Dest = posix.fstat(fdLink2Dest);
+
+        assertEquals(2, stLink2Source.nlink());
+        assertEquals(2, stLink2Dest.nlink());
+        assertEquals(stLink2Source.ino(), stLink2Dest.ino());
     }
 
     @Test

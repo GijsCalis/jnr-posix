@@ -47,4 +47,16 @@ public class WindowsByHandleFileInformation extends CommonFileInformation {
     public long getFileSizeLow() {
         return nFileSizeLow.intValue();
     }
+
+    public long getFileIndex() {
+        return (nFileIndexHigh.longValue() << 32) | nFileIndexLow.longValue();
+    }
+
+    public int getNumberOfLinks() {
+        return nNumberOfLinks.intValue();
+    }
+
+    public int getVolumeSerialNumber() {
+        return dwVolumeSerialNumber.intValue();
+    }
 }

@@ -2,6 +2,7 @@ package jnr.posix;
 
 import jnr.posix.util.WindowsHelpers;
 import jnr.posix.windows.CommonFileInformation;
+import jnr.posix.windows.WindowsByHandleFileInformation;
 
 public class WindowsRawFileStat extends AbstractJavaFileStat implements NanosecondFileStat {
     private int st_atime;
@@ -10,6 +11,7 @@ public class WindowsRawFileStat extends AbstractJavaFileStat implements Nanoseco
     private long st_ctimensec;
     private int st_rdev;
     private int st_dev;
+    private long st_ino;
     private int st_nlink;
     private int st_mode;
     private long st_size;
@@ -42,7 +44,15 @@ public class WindowsRawFileStat extends AbstractJavaFileStat implements Nanoseco
         st_ctimensec = ctime % CommonFileInformation.NANOSECONDS;
         st_ctime = (int) (ctime / CommonFileInformation.NANOSECONDS);
         st_size = isDirectory() ? 0 : fileInfo.getFileSize();
-        st_nlink = 1;
+        if (fileInfo instanceof WindowsByHandleFileInformation) {
+            st_nlink = ((WindowsByHandleFileInformation) fileInfo).getNumberOfLinks();
+            st_ino = ((WindowsByHandleFileInformation) fileInfo).getFileIndex();
+            st_dev = ((WindowsByHandleFileInformation) fileInfo).getVolumeSerialNumber();
+        } else {
+            st_nlink = 1;
+            st_ino = 0;
+        }
+
         st_mode &= ~(S_IWGRP | S_IWOTH);
     }
 
@@ -76,6 +86,10 @@ public class WindowsRawFileStat extends AbstractJavaFileStat implements Nanoseco
 
     public long dev() {
         return st_dev;
+    }
+
+    public long ino() {
+        return st_ino;
     }
 
     public int nlink() {
